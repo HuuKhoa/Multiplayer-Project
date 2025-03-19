@@ -19,52 +19,27 @@ public class Player1Behavior : NetworkBehaviour {
     private bool canShoot = true;
 
 
-    // Awake is called before the scene is loaded
-    private void Awake() {
-
-    }
 
     // Start is called before the first frame update
     void Start() {
-        // soundManager.PlaySFX(soundManager.dungeonAmbiance); was too loud so I cut it from the game
-        // Set initial destiniation position
         destinationPos = this.transform.position;
     }
 
-    /*
-    IEnumerator SpawnArrows(){
-        while(true) {
-            yield return new WaitForSeconds(arrowTimer);
-            SpawnArrow();
-        }
-    }
-    */
+
 
     // Update is called once per frame
     void Update() {
         if(!IsOwner) return;
         // Get the position of the mouse when right click button is pressed
-        
+        // Move the character to that position
         if (Input.GetMouseButton(1)) {
             destinationPos = Input.mousePosition;
             destinationPos.z = -Camera.main.transform.position.z;
             destinationPos = Camera.main.ScreenToWorldPoint(destinationPos); 
         }
 
-        /*
+        // Shoot an arrow in the direction that the mouse is clicked
         if (Input.GetMouseButtonDown(0) && canShoot) {
-            
-            ShootServerRpc();
-            shootCooldown = 0f;
-            canShoot = false;
-        } else if (!canShoot) {
-            shootCooldown += Time.deltaTime;
-            if(shootCooldown >= 2f) {
-                canShoot = true;
-            } 
-        }
-        */
-         if (Input.GetMouseButtonDown(0) && canShoot) {
             Vector3 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
             mousePos.z = transform.position.z;
 
@@ -81,9 +56,6 @@ public class Player1Behavior : NetworkBehaviour {
             }
         }
     }
-        
-    
-
 
     void FixedUpdate() {
         // Move the Character towards where right click was pressed
@@ -92,56 +64,25 @@ public class Player1Behavior : NetworkBehaviour {
         }
     }
 
-    void OnCollisionEnter(Collision coll) {
-
-        // If the character touches anything that does damage calls the takes damage method
-        if (coll.gameObject.CompareTag("DamageSource")) {
-            TakesDamage();
-        }
-
-    }
-
-    [ServerRpc]
-    private void ShootServerRpc() {
-        // Convert mouse position to world space
-        Vector3 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-        mousePos.z = transform.position.z; // Keep arrow in the same Z-plane
-
-        // Calculate direction from player to mouse click
-        Vector3 shootDirection = (mousePos - transform.position).normalized;
-
-        // Instantiate arrow
-        GameObject arrow = Instantiate(arrowPrefab, transform.position, Quaternion.identity);
-
-        // Rotate arrow to face the direction
-        float angle = Mathf.Atan2(shootDirection.y, shootDirection.x) * Mathf.Rad2Deg;
-        arrow.transform.rotation = Quaternion.Euler(0f, 0f, angle);
-
-        // Apply velocity in the direction
-        Rigidbody rb = arrow.GetComponent<Rigidbody>();
-        if (rb != null) {
-            rb.velocity = shootDirection * arrowSpeed;
-        }
-        // Destroy arrow after some time
-        arrow.GetComponent<NetworkObject>().Spawn();
-        Destroy(arrow, arrowTimer);
-    }
-
     [ServerRpc(RequireOwnership = false)]
     void SpawnArrowServerRpc(Vector3 targetPos, ServerRpcParams rpcParams = default) {
-        // Ensure only the server executes this code
         if (!IsServer) return;
-
-        // Instantiate arrow on the server
-        GameObject arrow = Instantiate(arrowPrefab, transform.position, Quaternion.identity);
-        NetworkObject arrowNetworkObject = arrow.GetComponent<NetworkObject>();
-
-        if (arrowNetworkObject != null) {
-            arrowNetworkObject.Spawn();  // Now all clients will see the arrow
-        }
 
         // Calculate shoot direction
         Vector3 shootDirection = (targetPos - transform.position).normalized;
+
+        // Offset spawn position slightly ahead of the player to prevent self-hit
+        Vector3 spawnPosition = transform.position + (shootDirection * 0.8f);  // Move forward by 1.5 units
+
+        // Instantiate arrow
+        GameObject arrow = Instantiate(arrowPrefab, spawnPosition, Quaternion.identity);
+        NetworkObject arrowNetworkObject = arrow.GetComponent<NetworkObject>();
+
+        if (arrowNetworkObject != null) {
+            arrowNetworkObject.Spawn();
+        }
+
+        // Rotate arrow to face the shooting direction
         float angle = Mathf.Atan2(shootDirection.y, shootDirection.x) * Mathf.Rad2Deg;
         arrow.transform.rotation = Quaternion.Euler(0f, 0f, angle);
 
@@ -151,13 +92,22 @@ public class Player1Behavior : NetworkBehaviour {
             rb.velocity = shootDirection * arrowSpeed;
         }
 
-        // Destroy after a set time
+        // Destroy after set time
         Destroy(arrow, arrowTimer);
     }
+    
+    // Function for resetting the position of the player
+    [ServerRpc(RequireOwnership = false)]
+    public void ResetPositionServerRpc() {
+        ResetPositionClientRpc();
+    }
 
-    // Method to damage the character
-    void TakesDamage() {
-
+    [ClientRpc(RequireOwnership = false)]
+    private void ResetPositionClientRpc() {
+        if (IsOwner) {  // Only reset the affected player's position
+            transform.position = resetPos;
+            destinationPos = resetPos;
+        }
     }
     
 }
